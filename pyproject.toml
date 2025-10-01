@@ -1,0 +1,54 @@
+[tool.ruff]
+# 除外するディレクトリやファイル
+exclude = [
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".streamlit",
+    ".vscode",
+    ".gitignore"
+    # その他、プロジェクトに合わせて追加
+]
+
+# 1行の最大文字数
+line-length = 120
+# 対応するPythonのバージョン
+target-version = "py312"
+
+[tool.ruff.lint]
+# 有効化するルールをすべて選択
+select = ["ALL"]
+
+# 無効化するルールを指定
+# settings.jsonとruff.tomlで指定していたものをここにまとめる
+ignore = [
+    "T201",   # print() の使用を許可
+    "D",      # pydocstyle系のルールをすべて無効化
+    "ANN",    # 型アノテーション系のルールを無効化
+    "ERA001", # コメントアウトされたコードを許可
+    "INP001", # __init__.py がなくてもよい
+    "RET504", # returnの前に代入があってもよい
+    "BLE001", # 例外のブラインドキャッチを許可
+    "RUF001", # Unicodeのあいまいな文字を許可
+    "FBT003", # 関数呼び出しでのブール値位置引数を許可
+    "G004",   # f-stringでのloggingを許可
+    "PLR0913",# 引数の数が多くても許可
+    "RUF100", # 未使用のnoqaを許可
+    "E741",   # 'l', 'O', 'I'のような紛らわしい変数名を許可
+]
+
+# 自動修正が不可能なルール
+unfixable = ["F401"] # 未使用のimport
+
+# ダミー変数の正規表現
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.format]
+# ダブルクォートを使用
+quote-style = "double"
+# インデントはスペースを使用
+indent-style = "space"
+# 末尾のカンマを省略しない
+skip-magic-trailing-comma = false
+# 改行コード
+line-ending = "lf"
