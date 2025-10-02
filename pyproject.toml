@@ -6,6 +6,7 @@ dependencies = [
     "streamlit",
     "google-genai",
     # "pandas", # Nice-to-have機能でデータ分析に使うため
+    "pydantic>=2.11.9",
 ]
 
 [tool.ruff]
