@@ -45,10 +45,22 @@ class QuizModel(BaseModel):
     category: str
 
 
-# --- Pydanticモデル定義 (既存のモデルに追加) ---
-class ExplanationModel(BaseModel):
+# --- Pydanticモデル定義 (ExplanationModelをこちらに差し替え) ---
+class DetailedExplanationModel(BaseModel):
     question_index: int = Field(..., description="解説対象の問題のインデックス番号(0始まり)")
-    explanation: str = Field(..., description="生成された詳細な解説文")
+    overall_summary: str = Field(
+        ...,
+        description="この問題で問われているAzureの中核的な知識や概念についての要約（1〜2文）",
+    )
+    correct_answer_explanation: str = Field(..., description="正解の選択肢がなぜ正しいのかについての詳細な説明")
+    user_feedback: str = Field(
+        ...,
+        description="ユーザーの回答がなぜ間違っていたのか、または考え方のどこを修正すべきかについての具体的でパーソナルなフィードバック。ユーザーが正解している場合は、その思考プロセスを称賛する内容。",
+    )
+    analysis_of_other_options: str = Field(
+        ...,
+        description="正解以外の主要な選択肢が、なぜ不正解なのかについての簡潔な解説",
+    )
 
 
 def create_prompt(selected_categories):
@@ -88,9 +100,9 @@ def create_prompt(selected_categories):
     """
 
 
-# --- プロンプトテンプレート (既存の関数に追加) ---
+# --- プロンプトテンプレート (create_batch_explanation_prompt関数を更新) ---
 def create_batch_explanation_prompt(indices_to_explain, all_questions, all_results):
-    """選択された問題の解説を一度に生成するためのプロンプトを作成する"""
+    """選択された問題の詳細な解説を一度に生成するためのプロンプトを作成する"""
 
     questions_for_prompt = []
     for i in indices_to_explain:
@@ -110,16 +122,32 @@ def create_batch_explanation_prompt(indices_to_explain, all_questions, all_resul
         )
 
     prompt_header = """
-    あなたはAzureの専門家です。
-    以下のJSONデータに含まれる複数の問題について、なぜその答えが正解なのかを、ユーザーの回答も踏まえて分かりやすく解説してください。
-    特にユーザーが間違っている点や、考え方のヒントを重点的に説明してください。
+    あなたは、非常に共感能力が高く、経験豊富なAzureの個別指導教師です。
+    以下のJSONデータに含まれる複数の問題について、学習者の学習効果が最大になるように、詳細な解説を生成してください。
 
-    # 条件
-    - 各問題の解説は、`question_index`に対応させて、指定されたJSONリスト形式で出力してください。
-    - 出力形式: JSONリスト(配列)形式。前後に説明文や```jsonのようなマークダウンは含めないこと。
+    # 全体的な指示
+    - 生成する解説は、常に学習者である「あなた」に直接、優しく語りかける口調で記述してください。
+      学習者のことを指して「ユーザー」や「受験者」という三人称の呼びかけは絶対に使わないでください。
+      Azureサービスの「ユーザー」を表現する際は、「ユーザー」という単語を使っても構いません。
+    - 最終的な出力は、指示されたJSONスキーマに厳密に従ったJSONリスト形式とし、
+      前後に説明文やマークダウンは含めないでください。
+
+    # JSONスキーマの各フィールドの詳細な指示
+    - `question_index`: 元の質問のインデックス番号。
+    - `overall_summary`: この問題が試しているAzureの核心的な知識を、あなたが理解できるよう簡潔にまとめたもの。
+    - `correct_answer_explanation`: 正解の選択肢がなぜ正しいのかを、論理的かつ体系的に説明したもの。
+    - `user_feedback`: ここが最も重要です。あなたの回答と、あなたが記入した理由(`reason_by_user`)を深く考慮した、
+      パーソナルなフィードバックを生成してください。
+        - もし `reason_by_user` に具体的な記述がある場合、必ずその内容に触れてください。
+          例えば、「『[reason_by_userの内容]』という理由でこの選択肢を選ばれたのですね。
+          その視点は素晴らしいですが、このシナリオでは〇〇という点が異なります。」のように、
+          あなたの考えを一度受け止めてから、解説を始めてください。
+        - あなたがなぜその間違いを犯したのかを分析し、次に同様の問題を解くための具体的なヒントや
+          思考のコツを提示してください。
+        - 正解していた場合でも、あなたの考え方を称賛し、さらに知識を深めるための補足情報を提供してください。
+    - `analysis_of_other_options`: あなたが誤答した、あるいは間違いである他の選択肢について簡潔に説明したもの。
     """
 
-    # プロンプトヘッダーと、解説対象の質問データを結合する
     return f"""
     {prompt_header}
 
@@ -268,6 +296,7 @@ if st.session_state.submitted:
                     selected_indices.append(i)
 
         submitted = st.form_submit_button("選択した問題の解説をまとめて生成")
+
         if submitted and selected_indices:
             with st.spinner(f"{len(selected_indices)}件の解説をまとめて生成中です..."):
                 batch_prompt = create_batch_explanation_prompt(
@@ -281,15 +310,16 @@ if st.session_state.submitted:
                         contents=batch_prompt,
                         config={
                             "response_mime_type": "application/json",
-                            "response_schema": list[ExplanationModel],
+                            # ★★★ ここを新しいモデルに変更 ★★★
+                            "response_schema": list[DetailedExplanationModel],
                         },
                     )
-                    # 生成された解説をsession_stateに保存
-                    for expl in response.parsed:
-                        st.session_state.explanations[expl.question_index] = expl.explanation
+                    # 生成された解説オブジェクトをそのままsession_stateに保存
+                    for expl_obj in response.parsed:
+                        st.session_state.explanations[expl_obj.question_index] = expl_obj
 
                     st.success("解説の生成が完了しました！")
-                    st.rerun()  # 解説を画面に表示するために再描画
+                    st.rerun()
                 except Exception as e:
                     st.error(f"解説の生成中にエラーが発生しました: {e}")
 
@@ -311,8 +341,19 @@ if st.session_state.submitted:
 
             # 生成済みの解説があれば表示
             if i in st.session_state.explanations:
-                with st.expander("解説を見る"):
-                    st.info(st.session_state.explanations[i])
+                with st.expander("詳細な解説を見る"):
+                    explanation_data = st.session_state.explanations[i]
+
+                    st.success(f"**要点:** {explanation_data.overall_summary}")
+
+                    st.write("#### あなたの回答へのフィードバック")
+                    st.warning(explanation_data.user_feedback)
+
+                    st.write("#### 正解の解説")
+                    st.write(explanation_data.correct_answer_explanation)
+
+                    st.write("#### 他の選択肢について")
+                    st.write(explanation_data.analysis_of_other_options)
 
     # for i, q in enumerate(st.session_state.questions):
     #     user_ans = sorted(st.session_state.user_answers.get(i, []))
@@ -323,7 +364,7 @@ if st.session_state.submitted:
     #     st.write(q.question)
 
     #     if is_correct:
-    #         st.success("正解！")
+    #         st.success("正解!")
     #         correct_count += 1
     #     else:
     #         st.error("不正解")
