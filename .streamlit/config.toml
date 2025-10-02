@@ -1,0 +1,18 @@
+[theme]
+# ベーステーマ（light または dark）
+base = "light"
+
+# Azure ブルーをアクセントに
+primaryColor = "#0078D4"
+
+# 背景色（白ベース）
+backgroundColor = "#FFFFFF"
+
+# ウィジェット背景（薄いグレー）
+secondaryBackgroundColor = "#F3F2F1"
+
+# テキストカラー（黒）
+textColor = "#000000"
+
+# フォント（Segoe UI は Azure/Microsoft の標準）
+font = "Segoe UI, sans-serif"
