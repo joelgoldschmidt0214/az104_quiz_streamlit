@@ -13,7 +13,7 @@ st.set_page_config(page_title="AZ-104 Quiz", layout="wide")
 client = genai.Client()
 # MODEL_NAME = "gemini-2.5-flash-lite"
 
-QUIZ_NUM = 10
+# QUIZ_NUM = 10
 
 model_dict = {
     "Gemini 2.5 Flash Lite": "gemini-2.5-flash-lite",
@@ -74,7 +74,7 @@ def create_prompt(selected_categories):
 
     return f"""
     あなたはAzureの専門家です。AZ-104の模擬試験問題を作成してください。
-    以下の条件に従って、日本語で{QUIZ_NUM}問の問題と選択肢、正解、問題形式をJSON形式で生成してください。
+    以下の条件に従って、日本語で{quiz_num}問の問題と選択肢、正解、問題形式をJSON形式で生成してください。
 
     # 条件
     - 難易度: AZ-104と同等か、少し難しいレベル
@@ -169,6 +169,8 @@ st.session_state.setdefault("explanations", {})
 # サイドバー
 button_placeholder = st.sidebar.empty()
 
+quiz_num = st.sidebar.slider("設問数", 5, 40, 10, 5, key="quiz_num")
+
 st.sidebar.header("出題カテゴリ")
 with st.sidebar.expander("カテゴリを選択してください", expanded=True):
     # チェックボックスを一つずつ作成
@@ -181,8 +183,16 @@ model_choice = st.sidebar.radio(
     key="model_choice",
 )
 
-if button_placeholder.button(f"新しい問題を{QUIZ_NUM}問生成", key="generate_button"):
+if button_placeholder.button(f"新しい問題を{quiz_num}問生成", key="generate_button"):
     st.session_state.submitted = False
+    st.session_state.questions = None
+    st.session_state.user_answers = {}
+    st.session_state.explanations = {}
+    if "results_data" in st.session_state:
+        del st.session_state.results_data
+    if "correct_count" in st.session_state:
+        del st.session_state.correct_count
+
     with st.spinner("Geminiが問題を生成中です..."):
         prompt = create_prompt(selected_cats)
         try:
@@ -239,11 +249,6 @@ if st.session_state.questions and not st.session_state.submitted:
             st.rerun()
 
 # --- Streamlit アプリケーション (結果表示部分) ---
-
-# st.session_state.setdefault("questions", None) の近くに以下を追加
-st.session_state.setdefault("explanations", {})
-
-# ... (問題生成までのコードは省略) ...
 
 # 回答が送信されたら結果を表示
 if st.session_state.submitted:
@@ -310,7 +315,6 @@ if st.session_state.submitted:
                         contents=batch_prompt,
                         config={
                             "response_mime_type": "application/json",
-                            # ★★★ ここを新しいモデルに変更 ★★★
                             "response_schema": list[DetailedExplanationModel],
                         },
                     )
@@ -354,56 +358,3 @@ if st.session_state.submitted:
 
                     st.write("#### 他の選択肢について")
                     st.write(explanation_data.analysis_of_other_options)
-
-    # for i, q in enumerate(st.session_state.questions):
-    #     user_ans = sorted(st.session_state.user_answers.get(i, []))
-    #     correct_ans = sorted(q.answer)
-    #     is_correct = user_ans == correct_ans
-
-    #     st.subheader(f"問題 {i + 1}")
-    #     st.write(q.question)
-
-    #     if is_correct:
-    #         st.success("正解!")
-    #         correct_count += 1
-    #     else:
-    #         st.error("不正解")
-
-    #     st.write(f"あなたの回答: {', '.join(user_ans)}")
-    #     st.write(f"正解: {', '.join(correct_ans)}")
-
-    #     # 解説生成
-    #     reason = st.session_state.get(f"reason_{i}", "")
-    #     if not is_correct or reason:
-    #         with st.spinner(f"問題{i + 1}の解説を生成中..."):
-    #             options_for_prompt = {opt.id: opt.text for opt in q.options}
-
-    # explanation_prompt = f"""
-    # 以下のAzureの問題について、なぜこれが正解なのか解説してください。
-    # ユーザーの回答や記入内容も踏まえて、特に間違っている点を重点的に説明してください。
-
-    # ## 問題
-    # {q.question}
-
-    # ## 選択肢
-    # {json.dumps(options_for_prompt, ensure_ascii=False)}
-
-    # ## 正解
-    # {", ".join(correct_ans)}
-
-    # ## ユーザーの回答
-    # {", ".join(user_ans)}
-
-    # ## ユーザーが記入した理由
-    # {reason if reason else "記載なし"}
-    # """
-    #             try:
-    #                 explanation_response = client.models.generate_content(
-    #                     model=model_dict[model_choice],
-    #                     contents=explanation_prompt,
-    #                 )
-    #                 st.info(f"解説:\n{explanation_response.text}")
-    #             except Exception as e:
-    #                 st.warning(f"解説の生成に失敗しました: {e}")
-
-    # st.header(f"正答率: {correct_count / len(st.session_state.questions):.0%}")
