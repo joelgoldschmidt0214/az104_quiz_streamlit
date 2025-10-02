@@ -11,14 +11,18 @@ st.set_page_config(page_title="AZ-104 Quiz", layout="wide")
 
 # Geminiモデルを初期化
 client = genai.Client()
-MODEL_NAME = "gemini-2.5-flash-lite"
+# MODEL_NAME = "gemini-2.5-flash-lite"
 
 QUIZ_NUM = 10
 
+model_dict = {
+    "Gemini 2.5 Flash Lite": "gemini-2.5-flash-lite",
+    "Gemini 2.5 Flash": "gemini-2.5-flash",
+    "Gemini 2.5 Pro": "gemini-2.5-pro",
+}
+
 
 # --- プロンプトテンプレート ---
-# プロンプトを工夫することで、出力の質をコントロールできます。
-
 AZ104_CATEGORIES = [
     "IDとガバナンスの管理",
     "ストレージの実装と管理",
@@ -86,22 +90,29 @@ st.title("Azure AZ-104 模擬試験アプリ")
 st.session_state.setdefault("questions", None)
 st.session_state.setdefault("user_answers", {})
 st.session_state.setdefault("submitted", False)
-st.session_state.setdefault("model", "gemini-2.5-flash-lite")
 
-# サイドバーでカテゴリ選択(Nice-to-have機能)
+# サイドバー
+button_placeholder = st.sidebar.empty()
+
 st.sidebar.header("出題カテゴリ")
-selected_cats = st.sidebar.multiselect(
-    "カテゴリを選択してください\n(未選択の場合はランダム)",
-    AZ104_CATEGORIES,
+with st.sidebar.expander("カテゴリを選択してください", expanded=True):
+    # チェックボックスを一つずつ作成
+    selected_cats = [category for category in AZ104_CATEGORIES if st.checkbox(category, key=f"cb_{category}")]
+
+st.sidebar.header("モデル選択")
+model_choice = st.sidebar.radio(
+    "Gemini API model:",
+    ("Gemini 2.5 Flash Lite", "Gemini 2.5 Flash", "Gemini 2.5 Pro"),
+    key="model_choice",
 )
 
-if st.sidebar.button(f"新しい問題を{QUIZ_NUM}問生成", key="generate_button"):
+if button_placeholder.button(f"新しい問題を{QUIZ_NUM}問生成", key="generate_button"):
     st.session_state.submitted = False
     with st.spinner("Geminiが問題を生成中です..."):
         prompt = create_prompt(selected_cats)
         try:
             response = client.models.generate_content(
-                model=MODEL_NAME,
+                model=model_dict[model_choice],
                 contents=prompt,
                 config={
                     "response_mime_type": "application/json",
@@ -184,27 +195,24 @@ if st.session_state.submitted:
                 以下のAzureの問題について、なぜこれが正解なのか解説してください。
                 ユーザーの回答や記入内容も踏まえて、特に間違っている点を重点的に説明してください。
 
-                # 問題
+                ## 問題
                 {q.question}
 
-
-
-
-                # 選択肢
+                ## 選択肢
                 {json.dumps(options_for_prompt, ensure_ascii=False)}
 
-                # 正解
+                ## 正解
                 {", ".join(correct_ans)}
 
-                # ユーザーの回答
+                ## ユーザーの回答
                 {", ".join(user_ans)}
 
-                # ユーザーが記入した理由
+                ## ユーザーが記入した理由
                 {reason if reason else "記載なし"}
                 """
                 try:
                     explanation_response = client.models.generate_content(
-                        model=MODEL_NAME,
+                        model=model_dict[model_choice],
                         contents=explanation_prompt,
                     )
                     st.info(f"解説:\n{explanation_response.text}")
