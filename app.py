@@ -4,10 +4,13 @@ import json
 
 import streamlit as st
 from google import genai
+from pydantic import BaseModel, Field
 
 # Geminiモデルを初期化
 client = genai.Client()
-model = "gemini-2.5-flash"
+MODEL_NAME = "gemini-2.5-flash-lite"
+
+QUIZ_NUM = 10
 
 
 # --- プロンプトテンプレート ---
@@ -22,6 +25,19 @@ AZ104_CATEGORIES = [
 ]
 
 
+class OptionModel(BaseModel):
+    id: str = Field(..., description="選択肢のID(例: 'A', 'B')")
+    text: str = Field(..., description="選択肢の本文")
+
+
+class QuizModel(BaseModel):
+    question: str
+    options: list[OptionModel]
+    answer: list[str]
+    type: str
+    category: str
+
+
 def create_prompt(selected_categories):
     # 選択されたカテゴリがなければ、全カテゴリからランダムに選ぶ
     if not selected_categories:
@@ -33,19 +49,24 @@ def create_prompt(selected_categories):
 
     return f"""
     あなたはAzureの専門家です。AZ-104の模擬試験問題を作成してください。
-    以下の条件に従って、日本語で10問の問題と選択肢、正解、問題形式をJSON形式で生成してください。
+    以下の条件に従って、日本語で{QUIZ_NUM}問の問題と選択肢、正解、問題形式をJSON形式で生成してください。
 
     # 条件
     - 難易度: AZ-104と同等か、少し難しいレベル
     - 出題範囲: {categories_text}
     - 問題形式: "single"(単一回答)または "multiple"(複数回答)をランダムに含めること
-    - 出力形式: 厳密なJSONリスト(配列)形式。前後に説明文や```jsonのようなマークダウンは含めないこと。
+    - 出力形式: JSONリスト(配列)形式。前後に説明文や```jsonのようなマークダウンは含めないこと。
 
     [
       {{
         "question": "問題文",
-        "options": {{"A": "選択肢A", "B": "選択肢B", "C": "選択肢C", "D": "選択肢D"}},
-        "answer": ["正解のキー"],
+        "options": [
+            {{"id": "A", "text": "選択肢A"}},
+            {{"id": "B", "text": "選択肢B"}},
+            {{"id": "C", "text": "選択肢C"}},
+            {{"id": "D", "text": "選択肢D"}}
+        ],
+        "answer": ["正解のid"],
         "type": "single",
         "category": "出題カテゴリ名"
       }},
@@ -60,7 +81,7 @@ st.title("Azure AZ-104 模擬試験アプリ")
 
 # セッション状態で問題と回答を管理
 if "questions" not in st.session_state:
-    st.session_state.questions = []
+    st.session_state.questions = None
 if "user_answers" not in st.session_state:
     st.session_state.user_answers = {}
 if "submitted" not in st.session_state:
@@ -73,20 +94,25 @@ selected_cats = st.sidebar.multiselect(
     AZ104_CATEGORIES,
 )
 
-if st.button("新しい問題を10問生成", key="generate_button"):
+if st.sidebar.button(f"新しい問題を{QUIZ_NUM}問生成", key="generate_button"):
     st.session_state.submitted = False
     with st.spinner("Geminiが問題を生成中です..."):
         prompt = create_prompt(selected_cats)
         try:
-            response = client.models.generate_content(model=model, contents=prompt)
-            # Geminiからの応答がMarkdown形式のコードブロックを含む場合があるため、それを除去
-            cleaned_response = response.text.replace("```json", "").replace("```", "").strip()
-            st.session_state.questions = json.loads(cleaned_response)
+            response = client.models.generate_content(
+                model=MODEL_NAME,
+                contents=prompt,
+                config={
+                    "response_mime_type": "application/json",
+                    "response_schema": list[QuizModel],
+                },
+            )
+            st.session_state.questions = response.parsed
             st.session_state.user_answers = {}  # ユーザーの回答をリセット
             st.rerun()  # 画面を再描画して問題を表示
         except Exception as e:
             st.error(f"問題の生成中にエラーが発生しました: {e}")
-            st.error(f"受信したデータ: {response.text}")  # デバッグ用に表示
+            st.error(f"受信したデータ: {response.parsed}")  # デバッグ用に表示
 
 # 問題が生成されていれば表示
 if st.session_state.questions and not st.session_state.submitted:
@@ -94,23 +120,26 @@ if st.session_state.questions and not st.session_state.submitted:
     with st.form("quiz_form"):
         for i, q in enumerate(st.session_state.questions):
             st.subheader(f"問題 {i + 1}")
-            st.write(q["question"])
+            st.write(q.question)
 
-            options = list(q["options"].keys())
-            if q["type"] == "single":
+            # options = list(q["options"].keys())
+            options_ids = [opt.id for opt in q.options]
+            options_dict = {opt.id: opt.text for opt in q.options}
+
+            if q.type == "single":
                 answer = st.radio(
                     "選択肢:",
-                    options,
+                    options_ids,
                     key=f"q_{i}",
-                    format_func=lambda x, current_q=q: f"{x}: {current_q['options'][x]}",
+                    format_func=lambda x, cur_dict=options_dict: f"{x}: {cur_dict[x]}",
                 )
                 st.session_state.user_answers[i] = [answer]
-            elif q["type"] == "multiple":
+            elif q.type == "multiple":
                 answers = st.multiselect(
                     "選択肢 (複数選択可):",
-                    options,
+                    options_ids,
                     key=f"q_{i}",
-                    format_func=lambda x, current_q=q: f"{x}: {current_q['options'][x]}",
+                    format_func=lambda x, cur_dict=options_dict: f"{x}: {cur_dict[x]}",
                 )
                 st.session_state.user_answers[i] = answers
 
@@ -129,11 +158,11 @@ if st.session_state.submitted:
 
     for i, q in enumerate(st.session_state.questions):
         user_ans = sorted(st.session_state.user_answers.get(i, []))
-        correct_ans = sorted(q["answer"])
+        correct_ans = sorted(q.answer)
         is_correct = user_ans == correct_ans
 
         st.subheader(f"問題 {i + 1}")
-        st.write(q["question"])
+        st.write(q.question)
 
         if is_correct:
             st.success("正解！")
@@ -148,18 +177,20 @@ if st.session_state.submitted:
         reason = st.session_state.get(f"reason_{i}", "")
         if not is_correct or reason:
             with st.spinner(f"問題{i + 1}の解説を生成中..."):
+                options_for_prompt = {opt.id: opt.text for opt in q.options}
+
                 explanation_prompt = f"""
                 以下のAzureの問題について、なぜこれが正解なのか解説してください。
                 ユーザーの回答や記入内容も踏まえて、特に間違っている点を重点的に説明してください。
 
                 # 問題
-                {q["question"]}
+                {q.question}
 
 
 
 
                 # 選択肢
-                {json.dumps(q["options"], ensure_ascii=False)}
+                {json.dumps(options_for_prompt, ensure_ascii=False)}
 
                 # 正解
                 {", ".join(correct_ans)}
@@ -172,7 +203,7 @@ if st.session_state.submitted:
                 """
                 try:
                     explanation_response = client.models.generate_content(
-                        model=model,
+                        model=MODEL_NAME,
                         contents=explanation_prompt,
                     )
                     st.info(f"解説:\n{explanation_response.text}")
