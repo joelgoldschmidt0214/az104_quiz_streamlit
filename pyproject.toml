@@ -1,3 +1,13 @@
+[project]
+name = "az104-quiz-app"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "streamlit",
+    "google-genai",
+    # "pandas", # Nice-to-have機能でデータ分析に使うため
+]
+
 [tool.ruff]
 # 除外するディレクトリやファイル
 exclude = [
