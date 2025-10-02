@@ -6,6 +6,9 @@ import streamlit as st
 from google import genai
 from pydantic import BaseModel, Field
 
+st.set_page_config(page_title="AZ-104 Quiz", layout="wide")
+
+
 # Geminiモデルを初期化
 client = genai.Client()
 MODEL_NAME = "gemini-2.5-flash-lite"
@@ -80,17 +83,15 @@ def create_prompt(selected_categories):
 st.title("Azure AZ-104 模擬試験アプリ")
 
 # セッション状態で問題と回答を管理
-if "questions" not in st.session_state:
-    st.session_state.questions = None
-if "user_answers" not in st.session_state:
-    st.session_state.user_answers = {}
-if "submitted" not in st.session_state:
-    st.session_state.submitted = False
+st.session_state.setdefault("questions", None)
+st.session_state.setdefault("user_answers", {})
+st.session_state.setdefault("submitted", False)
+st.session_state.setdefault("model", "gemini-2.5-flash-lite")
 
 # サイドバーでカテゴリ選択(Nice-to-have機能)
 st.sidebar.header("出題カテゴリ")
 selected_cats = st.sidebar.multiselect(
-    "カテゴリを選択してください(未選択の場合はランダム)",
+    "カテゴリを選択してください\n(未選択の場合はランダム)",
     AZ104_CATEGORIES,
 )
 
